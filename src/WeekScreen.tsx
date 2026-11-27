@@ -4,9 +4,12 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { HabitCard } from './HabitCard';
 import {
   addDays,
+  countsInWeek,
   habitStreak,
-  habitsInWeek,
+  habitsToShow,
+  isArchivedNow,
   startOfWeek,
+  targetForWeek,
   weekDays,
   weekLabel,
   weekScore,
@@ -26,10 +29,12 @@ type Props = {
 export function WeekScreen({ data, todayKey, onToggle, onAdd, onEdit }: Props) {
   const [offset, setOffset] = useState(0); // weeks relative to the current one, <= 0
 
-  const currentWeek = startOfWeek(todayKey, data.weekStart);
+  const { weekStart } = data.settings;
+  const currentWeek = startOfWeek(todayKey, weekStart);
   const week = addDays(currentWeek, offset * 7);
   const days = weekDays(week);
-  const habits = habitsInWeek(data.habits, week);
+  const habits = habitsToShow(data.habits, week, currentWeek);
+  const noActiveHabits = data.habits.every(isArchivedNow);
   const score = weekScore(data.habits, data.checks, week);
   const champion = score === 100;
 
@@ -90,8 +95,17 @@ export function WeekScreen({ data, todayKey, onToggle, onAdd, onEdit }: Props) {
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>🏆</Text>
             <Text style={styles.emptyTitle}>
-              {data.habits.length === 0 ? 'No habits yet' : 'No habits existed this week'}
+              {data.habits.length === 0
+                ? 'No habits yet'
+                : offset === 0 && noActiveHabits
+                  ? 'All habits are archived'
+                  : 'No habits counted this week'}
             </Text>
+            {data.habits.length > 0 && offset === 0 && noActiveHabits && (
+              <Text style={styles.emptyText}>
+                Restore one from Progress, or add a new habit.
+              </Text>
+            )}
             {data.habits.length === 0 && (
               <Text style={styles.emptyText}>
                 Add a habit, set how many times a week you want to do it, and tick off the days.
@@ -106,8 +120,10 @@ export function WeekScreen({ data, todayKey, onToggle, onAdd, onEdit }: Props) {
               habit={h}
               days={days}
               checked={data.checks[h.id] ?? []}
+              target={targetForWeek(h, week)}
+              scored={countsInWeek(h, week)}
               todayKey={todayKey}
-              streak={habitStreak(h, data.checks, todayKey, data.weekStart)}
+              streak={habitStreak(h, data.checks, todayKey, weekStart)}
               onToggle={(day) => onToggle(h.id, day)}
               onEdit={() => onEdit(h)}
             />
