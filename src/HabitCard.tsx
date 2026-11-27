@@ -5,6 +5,7 @@ import { colors } from './theme';
 
 type Props = {
   habit: Habit;
+  target: number; // target for the shown week
   days: string[]; // the 7 day keys of the shown week
   checked: string[];
   todayKey: string;
@@ -13,9 +14,9 @@ type Props = {
   onEdit: () => void;
 };
 
-export function HabitCard({ habit, days, checked, todayKey, streak, onToggle, onEdit }: Props) {
+export function HabitCard({ habit, target, days, checked, todayKey, streak, onToggle, onEdit }: Props) {
   const count = days.filter((d) => checked.includes(d)).length;
-  const done = count >= habit.target;
+  const done = count >= target;
 
   return (
     <View style={[styles.card, done && styles.cardDone]}>
@@ -31,13 +32,13 @@ export function HabitCard({ habit, days, checked, todayKey, streak, onToggle, on
             {habit.name}
           </Text>
           <Text style={styles.sub}>
-            {habit.target}× per week{streak > 0 ? `  ·  🔥 ${streak}-week streak` : ''}
+            {target}× per week{streak > 0 ? `  ·  🔥 ${streak}-week streak` : ''}
           </Text>
         </View>
         <View style={[styles.pill, done && styles.pillDone]}>
           <Text style={[styles.pillText, done && styles.pillTextDone]}>
             {done ? '✓ ' : ''}
-            {count}/{habit.target}
+            {count}/{target}
           </Text>
         </View>
       </Pressable>

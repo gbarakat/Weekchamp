@@ -3,10 +3,12 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { HabitCard } from './HabitCard';
 import {
+  activeHabits,
   addDays,
   habitStreak,
   habitsInWeek,
   startOfWeek,
+  targetForWeek,
   weekDays,
   weekLabel,
   weekScore,
@@ -26,10 +28,10 @@ type Props = {
 export function WeekScreen({ data, todayKey, onToggle, onAdd, onEdit }: Props) {
   const [offset, setOffset] = useState(0); // weeks relative to the current one, <= 0
 
-  const currentWeek = startOfWeek(todayKey, data.weekStart);
+  const currentWeek = startOfWeek(todayKey, data.settings.weekStart);
   const week = addDays(currentWeek, offset * 7);
   const days = weekDays(week);
-  const habits = habitsInWeek(data.habits, week);
+  const habits = habitsInWeek(activeHabits(data.habits), week);
   const score = weekScore(data.habits, data.checks, week);
   const champion = score === 100;
 
@@ -90,9 +92,9 @@ export function WeekScreen({ data, todayKey, onToggle, onAdd, onEdit }: Props) {
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>🏆</Text>
             <Text style={styles.emptyTitle}>
-              {data.habits.length === 0 ? 'No habits yet' : 'No habits existed this week'}
+              {activeHabits(data.habits).length === 0 ? 'No habits yet' : 'No habits this week'}
             </Text>
-            {data.habits.length === 0 && (
+            {activeHabits(data.habits).length === 0 && (
               <Text style={styles.emptyText}>
                 Add a habit, set how many times a week you want to do it, and tick off the days.
                 Hit every target to become the week champion.
@@ -104,10 +106,11 @@ export function WeekScreen({ data, todayKey, onToggle, onAdd, onEdit }: Props) {
             <HabitCard
               key={h.id}
               habit={h}
+              target={targetForWeek(h, week)}
               days={days}
               checked={data.checks[h.id] ?? []}
               todayKey={todayKey}
-              streak={habitStreak(h, data.checks, todayKey, data.weekStart)}
+              streak={habitStreak(h, data.checks, todayKey, data.settings.weekStart)}
               onToggle={(day) => onToggle(h.id, day)}
               onEdit={() => onEdit(h)}
             />

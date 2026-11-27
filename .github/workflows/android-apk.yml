@@ -2,6 +2,8 @@ name: Android APK
 
 on:
   push:
+    branches: ['**']
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -44,8 +46,52 @@ jobs:
         working-directory: android
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
 
+      # Release 1 has no backup, so v2 must install over v1 without uninstalling.
+      # That only works if the signing key is unchanged: the React Native template debug key.
+      - name: Check signing key matches release 1
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          CERTS=$("$APKSIGNER" verify --print-certs android/app/build/outputs/apk/release/app-release.apk)
+          echo "$CERTS"
+          echo "$CERTS" | grep -qi "SHA-1 digest: 5e8f16062ea3cd2c4a0d547876baa6f38cabf625" \
+            || { echo "::error::Signing key changed: this APK will not install over release 1."; exit 1; }
+
+      - name: Name the APK by version
+        id: apk
+        run: |
+          VERSION=$(node -p "require('./app.json').expo.version")
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/weekchamp-v$VERSION.apk"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: weekchamp-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: weekchamp-v${{ steps.apk.outputs.version }}-apk
+          path: dist/weekchamp-v${{ steps.apk.outputs.version }}.apk
           if-no-files-found: error
+
+    outputs:
+      version: ${{ steps.apk.outputs.version }}
+
+  # Pushing a tag like v2.0.0 publishes the APK on a GitHub Release (a permanent download link).
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: weekchamp-v${{ needs.build.outputs.version }}-apk
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          gh release create "$TAG" "weekchamp-v$VERSION.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Weekchamp $TAG" \
+            --notes "Install: open this page on your Android phone, download weekchamp-v$VERSION.apk and open it. Updating from an earlier version keeps your habits." 
