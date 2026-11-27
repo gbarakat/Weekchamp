@@ -1,28 +1,36 @@
+import { useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
+  archivedSince,
+  areaBalance,
   habitStreak,
+  isArchivedNow,
+  LIFE_AREAS,
+  longDate,
   scoreHistory,
   shortDate,
+  startOfWeek,
   type AppData,
-  type WeekStart,
+  type Habit,
 } from './logic';
 import { colors } from './theme';
+import { Dialog } from './ui';
 
 const WEEKS = 8;
-const WEEK_START_OPTIONS: { value: WeekStart; label: string }[] = [
-  { value: 6, label: 'Saturday' },
-  { value: 0, label: 'Sunday' },
-  { value: 1, label: 'Monday' },
-];
 
 type Props = {
   data: AppData;
   todayKey: string;
-  onWeekStart: (value: WeekStart) => void;
+  onRestore: (habit: Habit) => void;
+  onDeleteForever: (habit: Habit) => void;
+  /** The Settings area, rendered at the bottom. */
+  children: ReactNode;
 };
 
-export function StatsScreen({ data, todayKey, onWeekStart }: Props) {
+export function StatsScreen({ data, todayKey, onRestore, onDeleteForever, children }: Props) {
+  const [deleting, setDeleting] = useState<Habit | null>(null);
+
   const history = scoreHistory(data, todayKey, WEEKS);
   const scored = history.filter((h) => h.score !== null);
   const championWeeks = scored.filter((h) => h.score === 100).length;
@@ -30,6 +38,10 @@ export function StatsScreen({ data, todayKey, onWeekStart }: Props) {
     scored.length === 0
       ? null
       : Math.round(scored.reduce((a, h) => a + (h.score ?? 0), 0) / scored.length);
+
+  const active = data.habits.filter((h) => !isArchivedNow(h));
+  const archived = data.habits.filter(isArchivedNow);
+  const balance = areaBalance(data, startOfWeek(todayKey, data.settings.weekStart));
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -80,19 +92,19 @@ export function StatsScreen({ data, todayKey, onWeekStart }: Props) {
 
       <Text style={styles.section}>Streaks</Text>
       <View style={styles.card}>
-        {data.habits.length === 0 ? (
-          <Text style={styles.caption}>Add a habit to start a streak.</Text>
+        {active.length === 0 ? (
+          <Text style={styles.captionFlat}>Add a habit to start a streak.</Text>
         ) : (
-          data.habits.map((h, i) => {
-            const streak = habitStreak(h, data.checks, todayKey, data.weekStart);
+          active.map((h, i) => {
+            const streak = habitStreak(h, data.checks, todayKey, data.settings.weekStart);
             return (
               <View key={h.id} style={[styles.row, i > 0 && styles.rowBorder]}>
-                <Text style={styles.rowEmoji}>{h.emoji || '⭐'}</Text>
+                <Text style={styles.rowEmoji}>{h.emoji}</Text>
                 <Text style={styles.rowName} numberOfLines={1}>
                   {h.name}
                 </Text>
                 <Text style={[styles.rowValue, streak === 0 && styles.rowValueMuted]}>
-                  {streak === 0 ? 'No streak' : `🔥 ${streak} ${streak === 1 ? 'week' : 'weeks'}`}
+                  {streak === 0 ? 'No streak yet' : `🔥 ${streak} ${streak === 1 ? 'week' : 'weeks'}`}
                 </Text>
               </View>
             );
@@ -100,28 +112,100 @@ export function StatsScreen({ data, todayKey, onWeekStart }: Props) {
         )}
       </View>
 
-      <Text style={styles.section}>Week starts on</Text>
-      <View style={styles.segment}>
-        {WEEK_START_OPTIONS.map((o) => {
-          const active = data.weekStart === o.value;
+      <Text style={styles.section}>Balance</Text>
+      <View style={styles.card}>
+        {balance.map((b, i) => {
+          const area = LIFE_AREAS.find((a) => a.id === b.area)!;
           return (
-            <Pressable
-              key={o.value}
-              onPress={() => onWeekStart(o.value)}
-              style={[styles.segmentCell, active && styles.segmentCellActive]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: active }}
-            >
-              <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
-                {o.label}
-              </Text>
-            </Pressable>
+            <View key={b.area} style={[styles.balanceRow, i > 0 && styles.rowBorder]}>
+              <View style={styles.balanceHead}>
+                <Text style={styles.rowName}>
+                  {area.emoji} {area.label}
+                </Text>
+                {b.habits === 0 ? (
+                  <Text style={styles.rowValueMuted}>No habits yet</Text>
+                ) : (
+                  <Text style={styles.balanceValue}>
+                    {b.habits} {b.habits === 1 ? 'habit' : 'habits'} · {b.done}/{b.target}
+                  </Text>
+                )}
+              </View>
+              {b.habits > 0 && (
+                <View style={styles.balanceTrack}>
+                  <View
+                    style={[styles.balanceFill, { width: `${(b.done / b.target) * 100}%` }]}
+                  />
+                </View>
+              )}
+            </View>
           );
         })}
+        <Text style={styles.caption}>See where your week's effort goes.</Text>
       </View>
-      <Text style={styles.caption}>
-        Changing this regroups your existing check-ins, so past scores can shift.
-      </Text>
+
+      {archived.length > 0 && (
+        <>
+          <Text style={styles.section}>Archived</Text>
+          <View style={styles.card}>
+            {archived.map((h, i) => {
+              const since = archivedSince(h);
+              return (
+                <View key={h.id} style={[styles.archivedRow, i > 0 && styles.rowBorder]}>
+                  <View style={styles.row}>
+                    <Text style={styles.rowEmoji}>{h.emoji}</Text>
+                    <View style={styles.archivedText}>
+                      <Text style={styles.rowName} numberOfLines={1}>
+                        {h.name}
+                      </Text>
+                      <Text style={styles.archivedDate}>
+                        Archived on {since ? longDate(since) : '–'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.archivedActions}>
+                    <Pressable
+                      onPress={() => onRestore(h)}
+                      style={styles.restoreBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Restore ${h.name}`}
+                    >
+                      <Text style={styles.restoreText}>Restore</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setDeleting(h)}
+                      style={styles.deleteBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete ${h.name} forever`}
+                    >
+                      <Text style={styles.deleteText}>Delete forever</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </>
+      )}
+
+      {children}
+
+      <Dialog
+        visible={deleting !== null}
+        title="Delete forever?"
+        message={`Delete ${deleting?.name ?? ''} and all its history? This can't be undone.`}
+        onClose={() => setDeleting(null)}
+        buttons={[
+          {
+            label: 'Delete forever',
+            kind: 'danger',
+            onPress: () => {
+              if (deleting) onDeleteForever(deleting);
+              setDeleting(null);
+            },
+          },
+          { label: 'Cancel', onPress: () => setDeleting(null) },
+        ]}
+      />
     </ScrollView>
   );
 }
@@ -140,6 +224,7 @@ const styles = StyleSheet.create({
   tileValue: { fontSize: 26, fontWeight: '800', color: colors.text },
   tileLabel: { fontSize: 13, color: colors.muted, marginTop: 4 },
   caption: { fontSize: 12, color: colors.muted, marginTop: 8, lineHeight: 17 },
+  captionFlat: { fontSize: 13, color: colors.muted, lineHeight: 18 },
   section: { fontSize: 15, fontWeight: '800', color: colors.text, marginTop: 22, marginBottom: 10 },
   card: {
     backgroundColor: colors.card,
@@ -169,17 +254,37 @@ const styles = StyleSheet.create({
   rowEmoji: { fontSize: 20, marginRight: 10 },
   rowName: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.text },
   rowValue: { fontSize: 14, fontWeight: '700', color: colors.text, marginLeft: 8 },
-  rowValueMuted: { color: colors.muted, fontWeight: '500' },
-  segment: {
-    flexDirection: 'row',
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 4,
+  rowValueMuted: { fontSize: 14, color: colors.muted, fontWeight: '500', marginLeft: 8 },
+  balanceRow: { paddingVertical: 10 },
+  balanceHead: { flexDirection: 'row', alignItems: 'center' },
+  balanceValue: { fontSize: 13, fontWeight: '700', color: colors.text, marginLeft: 8 },
+  balanceTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.bg,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  balanceFill: { height: 8, borderRadius: 4, backgroundColor: colors.primary },
+  archivedRow: { paddingBottom: 10 },
+  archivedText: { flex: 1 },
+  archivedDate: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  archivedActions: { flexDirection: 'row', gap: 8 },
+  restoreBtn: {
+    flex: 1,
+    backgroundColor: colors.primarySoft,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  restoreText: { fontSize: 14, fontWeight: '800', color: colors.primary },
+  deleteBtn: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
   },
-  segmentCell: { flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: 'center' },
-  segmentCellActive: { backgroundColor: colors.primary },
-  segmentText: { fontSize: 14, fontWeight: '700', color: colors.text },
-  segmentTextActive: { color: '#FFFFFF' },
+  deleteText: { fontSize: 14, fontWeight: '700', color: colors.danger },
 });
