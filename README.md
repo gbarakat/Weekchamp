@@ -1,70 +1,55 @@
 # Weekchamp
 
-Weekly habit tracker for Android, built with Expo (React Native + TypeScript).
+A goal, project and task tracker for Android, built with Expo (React Native + TypeScript).
+
+```
+Ultimate goal  ->  Project  ->  Task
+```
 
 ## Features
 
-- **Weekly targets.** Set how many times a week (1–7) you want to do each habit, and tick off the days.
-- **Week score and champion weeks.** The score is the average of each habit's progress toward its target. Hit every target to become the week champion.
-- **History stays true.** Change a target "from this week on" and past weeks keep their old target, or choose "all weeks" to re-score them.
-- **Archive, don't delete.** Archived habits keep all their history and can be restored any time from Progress. Archived weeks never lower a score or break a streak.
-- **Backup.** Export everything to a file, import it back, and get a nudge 30 days after the last backup.
-- **Gentle reminders.** One daily note with what's left this week, plus optional per-habit reminders. Both are skipped when there is nothing left to do.
-- **Life areas.** Tag habits as Spiritual, Physical, Mental or Emotional and see where the week's effort goes.
+- **One touch, long touch.** Touch a task to mark it done. Long touch to mark it missed. Touch a done or missed task to reopen it.
+- **Project page.** Press a project to open its page: tasks done, missed and open, completion, tasks done per week, and days left. Add tasks there.
+- **Project dates.** Every project has a start date and either an end date or no end date.
+- **Capacity assessment.** Every 2 or 3 weeks the app scores each project (done ÷ (done + missed)), sorts them by your own success and failure thresholds, tells you the most tasks you finished in a week, and suggests how many projects you can manage.
+- **Life wheel.** A wheel of four life areas (Spiritual, Physical, Mental, Emotional), sized by the tasks you have done in each. A project's life area is set on the project.
+- **Ultimate goals.** Define goals, give a project a goal, and optionally link a single task to a different goal.
 - **Private.** All data stays on the phone. No account, no server, no analytics.
 
 ## Install
 
-1. Open the [latest release](https://github.com/gbarakat/Weekchamp/releases/latest) on your phone.
-2. Download `weekchamp-v<version>.apk` and open it.
-3. Allow "install unknown apps" when Android asks.
+Download the APK from the [latest release](https://github.com/gbarakat/Weekchamp/releases/latest), open it on your phone, and allow "install unknown apps" when Android asks.
 
-Until a release is published, the APK is in the **Artifacts** of the latest green run under [Actions](https://github.com/gbarakat/Weekchamp/actions/workflows/android-apk.yml).
-
-### Upgrading from v1
-
-Install v2 **over** v1. Do not uninstall v1 first.
-
-v1 has no export, so uninstalling it deletes your habits for good. Installing v2 on top keeps them: your data is migrated on first launch, and the v1 copy is left in place as a safety net. Both versions are signed with the same key, and every build checks that. After upgrading, use **Progress → Backup → Export backup** to make your first backup.
+Version 3 installs over versions 1 and 2 (same signing key; every build checks that). It starts empty: data saved by earlier versions is left on the phone but is not used.
 
 The APK is signed with a debug key: fine for installing directly, not for the Play Store.
+
+There is no backup or export. Uninstalling the app, or losing the phone, loses the data.
 
 ## Develop
 
 ```bash
 npm install
 npx expo start        # scan the QR code with Expo Go on Android
-```
-
-Test reminders in a real build (the APK). They have not been checked in Expo Go.
-
-```bash
 npm run typecheck
 npm test
 ```
 
 ## Release
 
-1. Set the version in `app.json` (`version`, `android.versionCode`) and `package.json`.
-2. Merge, then push a matching tag:
-
-   ```bash
-   git tag v2.0.0 && git push origin v2.0.0
-   ```
-
-The workflow builds the APK and attaches it to a GitHub Release as `weekchamp-v2.0.0.apk`.
+Set the version in `app.json` (`version`, `android.versionCode`) and `package.json`, then push to the default branch. When the build is green, the workflow publishes `weekchamp-v<version>.apk` on a GitHub Release. A version that already has a release is not published again.
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `App.tsx` | Shell, tabs, habit create/edit/archive |
-| `src/logic.ts` | Dates, targets, scores, streaks, archive, migration, backup format (pure, unit-tested) |
-| `src/notify.ts` | Which reminders to schedule (pure, unit-tested) |
-| `src/notifications.ts` | Expo notifications wrapper |
-| `src/backupFiles.ts` | Share-sheet export and file-picker import |
-| `src/useAppData.ts` | Load, migrate and save to device storage |
-| `src/WeekScreen.tsx` | Week view with day check-offs |
-| `src/StatsScreen.tsx` | Progress tab: history, streaks, balance, archive |
-| `src/SettingsSection.tsx` | Week start, reminders, backup |
-| `src/HabitEditor.tsx` | Add/edit sheet |
+| `App.tsx` | Shell, tabs, page navigation, edit dialogs |
+| `src/logic.ts` | Data shapes, dates, project statistics, goals, life wheel, capacity assessment (pure, unit-tested) |
+| `src/useAppData.ts` | Load and save to device storage |
+| `src/ProjectsScreen.tsx` | Project list |
+| `src/ProjectPage.tsx` | One project: statistics and tasks |
+| `src/ProjectEditor.tsx` | Add/edit a project |
+| `src/GoalsScreen.tsx` | Goal list and goal page |
+| `src/WheelScreen.tsx` | Life wheel |
+| `src/CapacityScreen.tsx` | Assessment and its rules |
+| `src/ui.tsx` | Shared controls |

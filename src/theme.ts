@@ -10,7 +10,7 @@ export const colors = {
   successSoft: '#DDF5E7',
   gold: '#F5A524',
   goldSoft: '#FFF3D6',
-  danger: '#D92D20', // only for "Delete forever"
+  missed: '#8A8FA3',
+  missedSoft: '#ECEDF3',
+  danger: '#D92D20', // only for deleting
 };
-
-export const EMOJIS = ['💪', '🏃', '📚', '🧘', '💧', '🥗', '😴', '✍️', '🎯', '🧹', '🎸', '💻', '🕌', '🚭', '💰', '⭐'];

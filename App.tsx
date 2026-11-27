@@ -1,135 +1,237 @@
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
-import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { AppState, BackHandler, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { HabitEditor, type HabitDraft } from './src/HabitEditor';
+import { CapacityScreen } from './src/CapacityScreen';
+import { GoalPage, GoalsScreen } from './src/GoalsScreen';
 import {
-  archiveHabit,
-  changeTarget,
   dateKey,
-  deleteHabit,
-  restoreHabit,
-  startOfWeek,
-  targetForWeek,
-  toggleCheck,
+  deleteGoal,
+  deleteProject,
+  longTouchTask,
+  tasksOf,
+  touchTask,
   type AppData,
-  type Habit,
-  type TargetMode,
+  type Goal,
+  type Project,
+  type Task,
 } from './src/logic';
-import {
-  clearOpenedNotification,
-  getPermission,
-  requestPermission,
-  syncNotifications,
-  useOpenedNotification,
-  type PermissionState,
-} from './src/notifications';
-import { SettingsSection } from './src/SettingsSection';
-import { StatsScreen } from './src/StatsScreen';
+import { ProjectEditor, type ProjectDraft } from './src/ProjectEditor';
+import { ProjectPage } from './src/ProjectPage';
+import { ProjectsScreen } from './src/ProjectsScreen';
 import { colors } from './src/theme';
+import { Chip, Dialog, shared } from './src/ui';
 import { useAppData } from './src/useAppData';
-import { WeekScreen } from './src/WeekScreen';
+import { WheelScreen } from './src/WheelScreen';
 
-type Tab = 'week' | 'stats';
+type Tab = 'projects' | 'goals' | 'wheel' | 'capacity';
+const TABS: [Tab, string, string][] = [
+  ['projects', '🗂️', 'Projects'],
+  ['goals', '🎯', 'Goals'],
+  ['wheel', '🧭', 'Wheel'],
+  ['capacity', '📊', 'Capacity'],
+];
 
-/** Bumps whenever the app returns to the foreground. */
-function useForegroundTick(): number {
-  const [tick, setTick] = useState(0);
+/** An open project or goal page, with the page to go back to. */
+type Page = { kind: 'project' | 'goal'; id: string; back: Page | null };
+
+/** Re-renders whenever the app returns to the foreground, so "today" stays current. */
+function useForegroundTick(): void {
+  const [, setTick] = useState(0);
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') setTick((t) => t + 1);
     });
     return () => sub.remove();
   }, []);
-  return tick;
 }
 
 const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-const mapHabit = (data: AppData, id: string, fn: (h: Habit) => Habit): AppData => ({
+const mapTask = (data: AppData, id: string, fn: (t: Task) => Task): AppData => ({
   ...data,
-  habits: data.habits.map((h) => (h.id === id ? fn(h) : h)),
+  tasks: data.tasks.map((t) => (t.id === id ? fn(t) : t)),
 });
 
 export default function App() {
   const { data, update, loaded, error } = useAppData();
-  const foregroundTick = useForegroundTick();
-  const todayKey = dateKey(new Date()); // re-read on every render; foreground ticks re-render
-  const currentWeek = startOfWeek(todayKey, data.settings.weekStart);
+  useForegroundTick();
+  const todayKey = dateKey(new Date());
 
-  const [tab, setTab] = useState<Tab>('week');
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editing, setEditing] = useState<Habit | null>(null);
-  const [permission, setPermission] = useState<PermissionState>('unknown');
+  const [tab, setTab] = useState<Tab>('projects');
+  const [page, setPage] = useState<Page | null>(null);
 
-  // Permission can change in system settings while the app is in the background.
+  // Project editor: { project: null } creates a new one.
+  const [projectEdit, setProjectEdit] = useState<{ project: Project | null } | null>(null);
+  const [taskEdit, setTaskEdit] = useState<Task | null>(null);
+  const [taskName, setTaskName] = useState('');
+  const [taskGoal, setTaskGoal] = useState<string | null>(null);
+  const [goalEdit, setGoalEdit] = useState<Goal | null>(null);
+  const [goalName, setGoalName] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Android back button leaves an open page before leaving the app.
   useEffect(() => {
-    getPermission().then(setPermission);
-  }, [foregroundTick]);
-
-  // Reschedule reminders on every data change and every time the app opens.
-  useEffect(() => {
-    if (!loaded) return;
-    const t = setTimeout(() => void syncNotifications(data), 400);
-    return () => clearTimeout(t);
-  }, [data, loaded, permission, foregroundTick]);
-
-  // A tapped notification opens its tab (the backup reminder opens Progress).
-  const opened = useOpenedNotification();
-  const openedId = opened?.id;
-  const openedTab = opened?.tab;
-  useEffect(() => {
-    if (!openedTab) return;
-    setTab(openedTab);
-    clearOpenedNotification(); // otherwise the same tap is replayed on the next launch
-  }, [openedId, openedTab]);
-
-  const askPermission = useCallback(() => {
-    requestPermission().then(setPermission);
-  }, []);
-
-  const answerExplainer = (allow: boolean) => {
-    update((prev) => ({ ...prev, settings: { ...prev.settings, notificationsAsked: true } }));
-    if (allow) askPermission();
-  };
-
-  const openEditor = (habit: Habit | null) => {
-    setEditing(habit);
-    setEditorOpen(true);
-  };
-
-  const saveHabit = (draft: HabitDraft, mode: TargetMode | null) => {
-    const { target, ...fields } = draft;
-    update((prev) => {
-      if (!editing) {
-        const habit: Habit = {
-          id: newId(),
-          createdAt: todayKey,
-          targets: [{ from: todayKey, target }],
-          archived: [],
-          ...fields,
-        };
-        return { ...prev, habits: [...prev.habits, habit] };
-      }
-      return mapHabit(prev, editing.id, (h) => {
-        const next = { ...h, ...fields };
-        return mode ? changeTarget(next, target, mode, currentWeek) : next;
-      });
+    if (!page) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setPage(page.back);
+      return true;
     });
-    setEditorOpen(false);
+    return () => sub.remove();
+  }, [page]);
+
+  const openProject = (p: Project) => setPage({ kind: 'project', id: p.id, back: page });
+  const openGoal = (g: Goal) => setPage({ kind: 'goal', id: g.id, back: null });
+
+  const project = page?.kind === 'project' ? data.projects.find((p) => p.id === page.id) : undefined;
+  const goal = page?.kind === 'goal' ? data.goals.find((g) => g.id === page.id) : undefined;
+
+  const touch = (t: Task) => update((prev) => mapTask(prev, t.id, (x) => touchTask(x, todayKey)));
+  const longTouch = (t: Task) =>
+    update((prev) => mapTask(prev, t.id, (x) => longTouchTask(x, todayKey)));
+
+  const saveProject = (draft: ProjectDraft) => {
+    const editing = projectEdit?.project;
+    update((prev) =>
+      editing
+        ? { ...prev, projects: prev.projects.map((p) => (p.id === editing.id ? { ...p, ...draft } : p)) }
+        : { ...prev, projects: [...prev.projects, { id: newId(), createdAt: todayKey, ...draft }] },
+    );
+    setProjectEdit(null);
   };
 
-  const archiveEditing = () => {
-    if (editing) update((prev) => mapHabit(prev, editing.id, (h) => archiveHabit(h, todayKey)));
-    setEditorOpen(false);
+  const removeProject = () => {
+    const editing = projectEdit?.project;
+    if (!editing) return;
+    setPage(page?.back ?? null);
+    setProjectEdit(null);
+    update((prev) => deleteProject(prev, editing.id));
   };
 
-  // A fresh install on Android 13+ reports 'denied' until the user has been asked once.
-  const showExplainer =
-    loaded &&
-    !data.settings.notificationsAsked &&
-    (permission === 'undetermined' || permission === 'denied');
+  const addTask = (projectId: string, name: string) =>
+    update((prev) => ({
+      ...prev,
+      tasks: [
+        ...prev.tasks,
+        { id: newId(), projectId, name, status: 'open', statusAt: null, goalId: null, createdAt: todayKey },
+      ],
+    }));
+
+  const openTaskEdit = (t: Task) => {
+    setTaskEdit(t);
+    setTaskName(t.name);
+    setTaskGoal(t.goalId);
+    setConfirmDelete(false);
+  };
+
+  const saveTask = () => {
+    if (!taskEdit) return;
+    const name = taskName.trim();
+    update((prev) => mapTask(prev, taskEdit.id, (t) => ({ ...t, name, goalId: taskGoal })));
+    setTaskEdit(null);
+  };
+
+  const removeTask = () => {
+    if (!taskEdit) return;
+    const id = taskEdit.id;
+    update((prev) => ({ ...prev, tasks: prev.tasks.filter((t) => t.id !== id) }));
+    setTaskEdit(null);
+  };
+
+  const openGoalEdit = (g: Goal) => {
+    setGoalEdit(g);
+    setGoalName(g.name);
+    setConfirmDelete(false);
+  };
+
+  const saveGoal = () => {
+    if (!goalEdit) return;
+    const name = goalName.trim();
+    update((prev) => ({
+      ...prev,
+      goals: prev.goals.map((g) => (g.id === goalEdit.id ? { ...g, name } : g)),
+    }));
+    setGoalEdit(null);
+  };
+
+  const removeGoal = () => {
+    if (!goalEdit) return;
+    const id = goalEdit.id;
+    setPage(null);
+    setGoalEdit(null);
+    update((prev) => deleteGoal(prev, id));
+  };
+
+  const taskProjectGoal = taskEdit
+    ? data.goals.find(
+        (g) => g.id === data.projects.find((p) => p.id === taskEdit.projectId)?.goalId,
+      )
+    : undefined;
+
+  let body = null;
+  if (!loaded) body = null;
+  else if (project) {
+    body = (
+      <ProjectPage
+        data={data}
+        project={project}
+        todayKey={todayKey}
+        onBack={() => setPage(page?.back ?? null)}
+        onEdit={() => setProjectEdit({ project })}
+        onAddTask={(name) => addTask(project.id, name)}
+        onTouch={touch}
+        onLongTouch={longTouch}
+        onEditTask={openTaskEdit}
+      />
+    );
+  } else if (goal) {
+    body = (
+      <GoalPage
+        data={data}
+        goal={goal}
+        onBack={() => setPage(null)}
+        onEdit={() => openGoalEdit(goal)}
+        onOpenProject={openProject}
+        onTouch={touch}
+        onLongTouch={longTouch}
+      />
+    );
+  } else if (tab === 'projects') {
+    body = (
+      <ProjectsScreen
+        data={data}
+        todayKey={todayKey}
+        onOpen={openProject}
+        onAdd={() => setProjectEdit({ project: null })}
+      />
+    );
+  } else if (tab === 'goals') {
+    body = (
+      <GoalsScreen
+        data={data}
+        onOpen={openGoal}
+        onAdd={(name) =>
+          update((prev) => ({
+            ...prev,
+            goals: [...prev.goals, { id: newId(), name, createdAt: todayKey }],
+          }))
+        }
+      />
+    );
+  } else if (tab === 'wheel') {
+    body = <WheelScreen data={data} />;
+  } else {
+    body = (
+      <CapacityScreen
+        data={data}
+        todayKey={todayKey}
+        onSettings={(patch) =>
+          update((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }))
+        }
+      />
+    );
+  }
 
   return (
     <SafeAreaProvider>
@@ -142,99 +244,112 @@ export default function App() {
         {error && (
           <Text style={styles.notice}>
             {error === 'load'
-              ? "Couldn't read your saved habits. Please close and reopen the app. Changes made now won't be saved."
+              ? "Couldn't read your saved data. Please close and reopen the app. Changes made now won't be saved."
               : "Couldn't save to this phone's storage. Recent changes may not be kept."}
           </Text>
         )}
 
-        {showExplainer && (
-          <View style={styles.explainer}>
-            <Text style={styles.explainerTitle}>Want gentle reminders?</Text>
-            <Text style={styles.explainerText}>
-              One short note a day at {data.settings.dailyReminder.time} with what's left this
-              week. Nothing once you're done. You can change this in Progress.
-            </Text>
-            <View style={styles.explainerRow}>
-              <Pressable
-                onPress={() => answerExplainer(true)}
-                style={styles.explainerYes}
-                accessibilityRole="button"
-              >
-                <Text style={styles.explainerYesText}>Turn on reminders</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => answerExplainer(false)}
-                style={styles.explainerNo}
-                accessibilityRole="button"
-              >
-                <Text style={styles.explainerNoText}>Not now</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-
-        <View style={styles.body}>
-          {!loaded ? null : tab === 'week' ? (
-            <WeekScreen
-              data={data}
-              todayKey={todayKey}
-              onToggle={(habitId, day) =>
-                update((prev) => ({ ...prev, checks: toggleCheck(prev.checks, habitId, day) }))
-              }
-              onAdd={() => openEditor(null)}
-              onEdit={openEditor}
-            />
-          ) : (
-            <StatsScreen
-              data={data}
-              todayKey={todayKey}
-              onRestore={(habit) =>
-                update((prev) => mapHabit(prev, habit.id, (h) => restoreHabit(h, todayKey)))
-              }
-              onDeleteForever={(habit) => update((prev) => deleteHabit(prev, habit.id))}
-            >
-              <SettingsSection
-                data={data}
-                todayKey={todayKey}
-                permission={permission}
-                update={update}
-                onAllowNotifications={askPermission}
-              />
-            </StatsScreen>
-          )}
-        </View>
+        <View style={styles.body}>{body}</View>
 
         <View style={styles.tabs}>
-          {(
-            [
-              ['week', '📅', 'Week'],
-              ['stats', '📈', 'Progress'],
-            ] as const
-          ).map(([key, icon, label]) => (
-            <Pressable
-              key={key}
-              onPress={() => setTab(key)}
-              style={styles.tab}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: tab === key }}
-            >
-              <Text style={[styles.tabIcon, tab !== key && styles.tabInactive]}>{icon}</Text>
-              <Text style={[styles.tabLabel, tab === key && styles.tabLabelActive]}>{label}</Text>
-            </Pressable>
-          ))}
+          {TABS.map(([key, icon, label]) => {
+            const active = tab === key;
+            return (
+              <Pressable
+                key={key}
+                onPress={() => {
+                  setTab(key);
+                  setPage(null);
+                }}
+                style={styles.tab}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`${label} tab`}
+              >
+                <Text style={[styles.tabIcon, !active && styles.tabInactive]}>{icon}</Text>
+                <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
-        <HabitEditor
-          visible={editorOpen}
-          habit={editing}
-          currentTarget={editing ? targetForWeek(editing, currentWeek) : 3}
-          onSave={saveHabit}
-          onArchive={archiveEditing}
-          onReminderEnabled={() => {
-            if (permission !== 'granted') askPermission();
-          }}
-          onClose={() => setEditorOpen(false)}
+        <ProjectEditor
+          visible={projectEdit !== null}
+          project={projectEdit?.project ?? null}
+          taskCount={projectEdit?.project ? tasksOf(data, projectEdit.project.id).length : 0}
+          goals={data.goals}
+          todayKey={todayKey}
+          onSave={saveProject}
+          onDelete={removeProject}
+          onClose={() => setProjectEdit(null)}
         />
+
+        <Dialog
+          visible={taskEdit !== null}
+          title="Edit task"
+          onClose={() => setTaskEdit(null)}
+          buttons={[
+            { label: 'Save', kind: 'primary', onPress: saveTask, disabled: taskName.trim() === '' },
+            {
+              label: confirmDelete ? 'Tap again to delete this task' : 'Delete task',
+              kind: 'danger',
+              onPress: () => (confirmDelete ? removeTask() : setConfirmDelete(true)),
+            },
+            { label: 'Cancel', onPress: () => setTaskEdit(null) },
+          ]}
+        >
+          <TextInput
+            value={taskName}
+            onChangeText={setTaskName}
+            style={[shared.input, styles.dialogInput]}
+            maxLength={80}
+            accessibilityLabel="Task name"
+          />
+          <Text style={shared.label}>Ultimate goal</Text>
+          <View style={shared.wrap}>
+            <Chip
+              label={taskProjectGoal ? `Project's goal (${taskProjectGoal.name})` : "Project's goal (none)"}
+              active={taskGoal === null}
+              onPress={() => setTaskGoal(null)}
+              accessibilityLabel="Follow the project's goal"
+            />
+            {data.goals.map((g) => (
+              <Chip
+                key={g.id}
+                label={`🎯 ${g.name}`}
+                active={taskGoal === g.id}
+                onPress={() => setTaskGoal(g.id)}
+                accessibilityLabel={`Link task to goal ${g.name}`}
+              />
+            ))}
+          </View>
+        </Dialog>
+
+        <Dialog
+          visible={goalEdit !== null}
+          title="Edit goal"
+          onClose={() => setGoalEdit(null)}
+          buttons={[
+            { label: 'Save', kind: 'primary', onPress: saveGoal, disabled: goalName.trim() === '' },
+            {
+              label: confirmDelete ? 'Tap again to delete this goal' : 'Delete goal',
+              kind: 'danger',
+              onPress: () => (confirmDelete ? removeGoal() : setConfirmDelete(true)),
+            },
+            { label: 'Cancel', onPress: () => setGoalEdit(null) },
+          ]}
+        >
+          <TextInput
+            value={goalName}
+            onChangeText={setGoalName}
+            style={[shared.input, styles.dialogInput]}
+            maxLength={60}
+            accessibilityLabel="Goal name"
+          />
+          <Text style={shared.caption}>
+            Deleting a goal keeps its projects and tasks. They just lose the link.
+          </Text>
+        </Dialog>
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -255,26 +370,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 18,
   },
-  explainer: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    padding: 14,
-    borderRadius: 16,
-    backgroundColor: colors.primarySoft,
-  },
-  explainerTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
-  explainerText: { fontSize: 13, color: colors.text, marginTop: 4, lineHeight: 18 },
-  explainerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 8 },
-  explainerYes: {
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-  },
-  explainerYesText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
-  explainerNo: { paddingVertical: 9, paddingHorizontal: 10 },
-  explainerNoText: { color: colors.muted, fontSize: 14, fontWeight: '700' },
   body: { flex: 1 },
+  dialogInput: { marginTop: 12 },
   tabs: {
     flexDirection: 'row',
     backgroundColor: colors.card,

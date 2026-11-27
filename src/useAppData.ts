@@ -1,29 +1,24 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { dateKey, EMPTY_DATA, normalize, type AppData } from './logic';
+import { dateKey, EMPTY_DATA, sanitize, type AppData } from './logic';
 
-const KEY_V2 = 'weekchamp:data:v2';
-const KEY_V1 = 'weekchamp:data:v1'; // read once for migration, never written or removed
+// Data saved by releases 1 and 2 lives under other keys. It is left untouched and is not used.
+const STORAGE_KEY = 'weekchamp:data:v3';
 
-function parse(raw: string | null): AppData | null {
-  if (!raw) return null;
-  try {
-    return normalize(JSON.parse(raw));
-  } catch {
-    return null;
-  }
-}
-
-/** Reads v2 data, or migrates v1 data if v2 is absent or unreadable. */
 async function load(): Promise<AppData> {
-  const data =
-    parse(await AsyncStorage.getItem(KEY_V2)) ??
-    parse(await AsyncStorage.getItem(KEY_V1)) ??
-    EMPTY_DATA;
-  return data.settings.firstLaunchAt
+  const raw = await AsyncStorage.getItem(STORAGE_KEY);
+  let data = EMPTY_DATA;
+  if (raw) {
+    try {
+      data = sanitize(JSON.parse(raw));
+    } catch {
+      // Unreadable JSON: start empty.
+    }
+  }
+  return data.settings.firstUseAt
     ? data
-    : { ...data, settings: { ...data.settings, firstLaunchAt: dateKey(new Date()) } };
+    : { ...data, settings: { ...data.settings, firstUseAt: dateKey(new Date()) } };
 }
 
 export type StorageError = 'load' | 'save' | null;
@@ -52,7 +47,7 @@ export function useAppData() {
 
   useEffect(() => {
     if (!canSave.current) return;
-    AsyncStorage.setItem(KEY_V2, JSON.stringify(data)).then(
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data)).then(
       () => setError(null),
       () => setError('save'),
     );

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Weekchamp",
     "slug": "weekchamp",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -18,18 +18,10 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.weekchamp.app",
-      "versionCode": 2
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
-      [
-        "expo-notifications",
-        {
-          "color": "#4F46E5"
-        }
-      ]
-    ]
+    }
   }
 }

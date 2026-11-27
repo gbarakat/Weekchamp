@@ -2,6 +2,7 @@ name: Android APK
 
 on:
   push:
+    branches: ['**'] # branches only; the release job creates the version tag itself
   workflow_dispatch:
 
 permissions:
@@ -79,33 +80,39 @@ jobs:
           path: weekchamp-v${{ steps.version.outputs.version }}.apk
           if-no-files-found: error
 
-  # Pushing a tag like v2.0.0 publishes the APK on a GitHub Release.
+  # A green build on the default branch publishes the APK on a GitHub Release, once per version.
+  # Bump the version in app.json to publish a new release.
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref_name == github.event.repository.default_branch
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     env:
+      GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.build.outputs.version }}
     steps:
-      - name: Check the tag matches the app version
+      - name: Check whether this version is already released
+        id: existing
         run: |
-          if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match app version v$VERSION in app.json."
-            exit 1
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release v$VERSION already exists; leaving it as it is."
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/download-artifact@v4
+        if: steps.existing.outputs.found == 'false'
         with:
           name: weekchamp-v${{ needs.build.outputs.version }}-apk
 
       - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
+        if: steps.existing.outputs.found == 'false'
         run: |
-          gh release create "$GITHUB_REF_NAME" "weekchamp-v$VERSION.apk" \
+          gh release create "v$VERSION" "weekchamp-v$VERSION.apk" \
             --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
             --title "Weekchamp v$VERSION" \
             --generate-notes
