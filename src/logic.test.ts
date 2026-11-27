@@ -11,6 +11,16 @@ import {
   weekCount,
   weekDays,
   weekScore,
+  targetForWeek,
+  changeTarget,
+  archiveHabit,
+  restoreHabit,
+  isArchived,
+  activeHabits,
+  areaBalance,
+  EMPTY_DATA,
+  DEFAULT_SETTINGS,
+  type AppData,
   type Habit,
 } from './logic.ts';
 
@@ -20,8 +30,16 @@ const habit = (id: string, target: number, createdAt = '2026-01-01'): Habit => (
   id,
   name: id,
   emoji: '⭐',
-  target,
   createdAt,
+  targets: [{ from: createdAt, target }],
+  archived: [],
+  area: null,
+  reminder: null,
+});
+const withData = (habits: Habit[], checks: Record<string, string[]> = {}): AppData => ({
+  ...EMPTY_DATA,
+  habits,
+  checks,
 });
 
 test('startOfWeek respects the configured first day', () => {
@@ -82,7 +100,7 @@ test('toggleCheck adds then removes without mutating', () => {
 });
 
 test('scoreHistory returns n weeks, oldest first', () => {
-  const data = { habits: [habit('a', 1, '2026-11-08')], checks: { a: ['2026-11-10'] }, weekStart: 0 as const };
+  const data = withData([habit('a', 1, '2026-11-08')], { a: ['2026-11-10'] });
   const hist = scoreHistory(data, TODAY, 3);
   assert.deepEqual(hist, [
     { week: '2026-11-01', score: null },
@@ -92,13 +110,124 @@ test('scoreHistory returns n weeks, oldest first', () => {
 });
 
 test('sanitize drops malformed data', () => {
-  assert.deepEqual(sanitize(null), { habits: [], checks: {}, weekStart: 0 });
+  assert.deepEqual(sanitize(null), EMPTY_DATA);
   const out = sanitize({
-    habits: [habit('a', 3), { id: 'bad' }, habit('b', 9)],
-    checks: { a: ['2026-11-15', 5], ghost: ['2026-11-15'] },
-    weekStart: 3,
+    habits: [habit('a', 3), { id: 'bad' }, habit('b', 9), habit('a', 2)],
+    checks: { a: ['2026-11-15', 5, 'nope'], ghost: ['2026-11-15'] },
+    settings: { weekStart: 3, dailyReminder: { enabled: 'yes', time: '25:00' } },
   });
   assert.deepEqual(out.habits.map((h) => h.id), ['a']);
   assert.deepEqual(out.checks, { a: ['2026-11-15'] });
-  assert.equal(out.weekStart, 0);
+  assert.deepEqual(out.settings, DEFAULT_SETTINGS);
+});
+
+test('sanitize migrates v1 data without losing anything', () => {
+  const v1 = {
+    habits: [{ id: 'gym', name: 'Gym', emoji: '💪', target: 3, createdAt: '2026-10-01' }],
+    checks: { gym: ['2026-11-15', '2026-11-16'] },
+    weekStart: 1,
+  };
+  const out = sanitize(v1);
+  assert.equal(out.schemaVersion, 2);
+  assert.deepEqual(out.habits, [
+    {
+      id: 'gym',
+      name: 'Gym',
+      emoji: '💪',
+      createdAt: '2026-10-01',
+      targets: [{ from: '2026-10-01', target: 3 }],
+      archived: [],
+      area: null,
+      reminder: null,
+    },
+  ]);
+  assert.deepEqual(out.checks, v1.checks);
+  assert.equal(out.settings.weekStart, 1);
+  assert.equal(out.settings.dailyReminder.enabled, true);
+  // Round trip through v2 keeps everything.
+  assert.deepEqual(sanitize(JSON.parse(JSON.stringify(out))), out);
+});
+
+// ---------- F05: target changes ----------
+
+test('changing the target "from this week on" keeps past weeks', () => {
+  const h = habit('a', 3, '2026-11-01');
+  const checks = { a: ['2026-11-01', '2026-11-02', '2026-11-03'] }; // champion week of 1 Nov
+  const raised = changeTarget(h, 5, 'forward', '2026-11-15');
+  assert.equal(targetForWeek(raised, '2026-11-01'), 3);
+  assert.equal(targetForWeek(raised, '2026-11-15'), 5);
+  assert.equal(weekScore([raised], checks, '2026-11-01'), 100);
+});
+
+test('changing the target for "all weeks" re-scores the past', () => {
+  const h = habit('a', 3, '2026-11-01');
+  const checks = { a: ['2026-11-01', '2026-11-02', '2026-11-03'] };
+  const raised = changeTarget(h, 5, 'all', '2026-11-15');
+  assert.deepEqual(raised.targets, [{ from: '2026-11-01', target: 5 }]);
+  assert.equal(weekScore([raised], checks, '2026-11-01'), 60);
+});
+
+test('a second forward change in the same week replaces the first', () => {
+  const h = changeTarget(changeTarget(habit('a', 3, '2026-11-01'), 5, 'forward', '2026-11-15'), 4, 'forward', '2026-11-15');
+  assert.deepEqual(h.targets, [
+    { from: '2026-11-01', target: 3 },
+    { from: '2026-11-15', target: 4 },
+  ]);
+});
+
+test('streaks use the target each week had', () => {
+  const h = changeTarget(habit('a', 1, '2026-11-01'), 2, 'forward', '2026-11-15');
+  const checks = { a: ['2026-11-01', '2026-11-08', '2026-11-15', '2026-11-16'] };
+  assert.equal(habitStreak(h, checks, TODAY, 0), 3);
+});
+
+// ---------- F06: archive ----------
+
+test('archiving mid-week excludes that week and later weeks from the score', () => {
+  const a = archiveHabit(habit('a', 2, '2026-11-01'), '2026-11-17');
+  const b = habit('b', 1, '2026-11-01');
+  const checks = { b: ['2026-11-15'] };
+  assert.ok(isArchived(a));
+  assert.deepEqual(activeHabits([a, b]).map((h) => h.id), ['b']);
+  assert.equal(weekScore([a, b], checks, '2026-11-15'), 100);
+  assert.equal(weekScore([a, b], {}, '2026-11-08'), 0); // before archiving it still counts
+});
+
+test('restoring keeps history and counts again from the next full week', () => {
+  const h = restoreHabit(archiveHabit(habit('a', 1, '2026-10-01'), '2026-10-28'), '2026-11-10');
+  assert.ok(!isArchived(h));
+  const checks = { a: ['2026-10-20', '2026-11-15'] };
+  assert.equal(weekScore([h], checks, '2026-10-18'), 100); // before archive
+  assert.equal(weekScore([h], checks, '2026-11-01'), null); // archived week
+  assert.equal(weekScore([h], checks, '2026-11-08'), null); // restored mid-week: no penalty
+  assert.equal(weekScore([h], checks, '2026-11-15'), 100);
+});
+
+test('streak skips archived weeks without breaking', () => {
+  const h = restoreHabit(archiveHabit(habit('a', 1, '2026-10-01'), '2026-10-27'), '2026-11-09');
+  // Done 18 Oct week, archived 25 Oct - 14 Nov weeks, done 15 Nov week.
+  const checks = { a: ['2026-10-12', '2026-10-19', '2026-11-15'] };
+  assert.equal(habitStreak(h, checks, TODAY, 0), 3);
+});
+
+test('archive is idempotent', () => {
+  const once = archiveHabit(habit('a', 1), '2026-11-17');
+  assert.equal(archiveHabit(once, '2026-11-18'), once);
+});
+
+// ---------- F17: life areas ----------
+
+test('areaBalance sums active habits per area, capped at target', () => {
+  const gym = { ...habit('gym', 2), area: 'physical' as const };
+  const run = { ...habit('run', 1), area: 'physical' as const };
+  const pray = { ...habit('pray', 7), area: 'spiritual' as const };
+  const old = archiveHabit({ ...habit('old', 1), area: 'mental' as const }, '2026-11-01');
+  const data = withData([gym, run, pray, old], {
+    gym: ['2026-11-15', '2026-11-16', '2026-11-17'],
+    pray: ['2026-11-15'],
+  });
+  const bal = areaBalance(data, '2026-11-15');
+  assert.deepEqual(bal.find((b) => b.area === 'physical'), { area: 'physical', habits: 2, done: 2, target: 3 });
+  assert.deepEqual(bal.find((b) => b.area === 'spiritual'), { area: 'spiritual', habits: 1, done: 1, target: 7 });
+  assert.deepEqual(bal.find((b) => b.area === 'mental'), { area: 'mental', habits: 0, done: 0, target: 0 });
 });
