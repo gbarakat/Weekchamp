@@ -18,6 +18,7 @@ import {
   type TargetMode,
 } from './src/logic';
 import {
+  clearOpenedNotification,
   getPermission,
   requestPermission,
   syncNotifications,
@@ -79,7 +80,9 @@ export default function App() {
   const openedId = opened?.id;
   const openedTab = opened?.tab;
   useEffect(() => {
-    if (openedTab) setTab(openedTab);
+    if (!openedTab) return;
+    setTab(openedTab);
+    clearOpenedNotification(); // otherwise the same tap is replayed on the next launch
   }, [openedId, openedTab]);
 
   const askPermission = useCallback(() => {
@@ -122,8 +125,11 @@ export default function App() {
     setEditorOpen(false);
   };
 
+  // A fresh install on Android 13+ reports 'denied' until the user has been asked once.
   const showExplainer =
-    loaded && !data.settings.notificationsAsked && permission === 'undetermined';
+    loaded &&
+    !data.settings.notificationsAsked &&
+    (permission === 'undetermined' || permission === 'denied');
 
   return (
     <SafeAreaProvider>

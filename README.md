@@ -36,7 +36,7 @@ npm install
 npx expo start        # scan the QR code with Expo Go on Android
 ```
 
-Reminders need a real build; Expo Go does not fully support notifications.
+Test reminders in a real build (the APK). They have not been checked in Expo Go.
 
 ```bash
 npm run typecheck

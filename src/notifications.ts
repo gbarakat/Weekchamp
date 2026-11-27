@@ -107,3 +107,7 @@ function useOpenedNative(): Opened {
 export const useOpenedNotification: () => Opened = notificationsSupported
   ? useOpenedNative
   : () => null;
+
+export function clearOpenedNotification(): void {
+  if (notificationsSupported) Notifications.clearLastNotificationResponse();
+}
