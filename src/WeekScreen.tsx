@@ -32,6 +32,7 @@ const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export function WeekScreen({ data, todayKey, onOpen, onAdd, onTouch, onLongTouch, onEditTask }: Props) {
   const [offset, setOffset] = useState(0); // weeks relative to the current one, <= 0
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set()); // project ids
 
   const currentWeek = startOfWeek(todayKey, data.settings.weekStart);
   const week = addDays(currentWeek, offset * 7);
@@ -39,6 +40,16 @@ export function WeekScreen({ data, todayKey, onOpen, onAdd, onTouch, onLongTouch
   const days = weekDays(week);
   const projects = projectsInWeek(data.projects, week);
   const summary = weekSummary(data, week);
+  const allCollapsed = projects.length > 0 && projects.every((p) => collapsed.has(p.id));
+
+  const toggle = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setCollapsed(allCollapsed ? new Set() : new Set(projects.map((p) => p.id)));
 
   return (
     <View style={styles.root}>
@@ -71,11 +82,16 @@ export function WeekScreen({ data, todayKey, onOpen, onAdd, onTouch, onLongTouch
           </Pressable>
         </View>
 
-        <View style={shared.card} accessibilityLabel="Week summary">
-          <Text style={styles.summary}>
+        <View style={[shared.card, styles.summaryCard]}>
+          <Text style={styles.summary} accessibilityLabel="Week summary">
             {count(summary.done, 'task')} done {isCurrent ? 'this week' : 'that week'}
             {summary.missed > 0 ? `, ${summary.missed} missed` : ''}
           </Text>
+          {projects.length > 1 && (
+            <Pressable onPress={toggleAll} hitSlop={8} accessibilityRole="button">
+              <Text style={styles.link}>{allCollapsed ? 'Expand all' : 'Collapse all'}</Text>
+            </Pressable>
+          )}
         </View>
 
         {projects.length === 0 ? (
@@ -94,14 +110,17 @@ export function WeekScreen({ data, todayKey, onOpen, onAdd, onTouch, onLongTouch
         ) : (
           projects.map((p) => {
             const w = projectWeek(data, p, week, isCurrent);
+            const open = !collapsed.has(p.id);
             return (
               <View key={p.id} style={shared.card}>
                 <Pressable
-                  onPress={() => onOpen(p)}
+                  onPress={() => toggle(p.id)}
                   style={styles.head}
                   accessibilityRole="button"
-                  accessibilityLabel={`Open project ${p.name}`}
+                  accessibilityState={{ expanded: open }}
+                  accessibilityLabel={`${open ? 'Collapse' : 'Expand'} ${p.name}`}
                 >
+                  <Text style={styles.chevron}>{open ? '▾' : '▸'}</Text>
                   <Text style={[shared.cardTitle, styles.name]} numberOfLines={2}>
                     {p.name}
                   </Text>
@@ -142,7 +161,11 @@ export function WeekScreen({ data, todayKey, onOpen, onAdd, onTouch, onLongTouch
                   })}
                 </View>
 
-                {w.tasks.length === 0 ? (
+                {!open ? (
+                  <Text style={shared.caption}>
+                    {w.tasks.length === 0 ? 'No tasks to show.' : `${count(w.tasks.length, 'task')} hidden. Touch the name to expand.`}
+                  </Text>
+                ) : w.tasks.length === 0 ? (
                   <Text style={shared.caption}>
                     {isCurrent ? 'No open tasks. Open the project to add some.' : 'Nothing was marked that week.'}
                   </Text>
@@ -158,6 +181,17 @@ export function WeekScreen({ data, todayKey, onOpen, onAdd, onTouch, onLongTouch
                       />
                     ))}
                   </View>
+                )}
+                {open && (
+                  <Pressable
+                    onPress={() => onOpen(p)}
+                    style={styles.openLink}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open project ${p.name}`}
+                  >
+                    <Text style={styles.link}>Open project ›</Text>
+                  </Pressable>
                 )}
               </View>
             );
@@ -195,7 +229,11 @@ const styles = StyleSheet.create({
   weekTitleWrap: { flex: 1, alignItems: 'center' },
   weekTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
   weekRange: { fontSize: 13, color: colors.muted, marginTop: 2 },
-  summary: { fontSize: 15, fontWeight: '700', color: colors.text },
+  summaryCard: { flexDirection: 'row', alignItems: 'center' },
+  summary: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.text },
+  link: { fontSize: 14, fontWeight: '800', color: colors.primary },
+  chevron: { fontSize: 16, color: colors.muted, width: 22 },
+  openLink: { alignSelf: 'flex-start', marginTop: 12 },
   head: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   name: { flex: 1 },
   pill: {
@@ -227,5 +265,5 @@ const styles = StyleSheet.create({
   dotFuture: { opacity: 0.4 },
   dotText: { fontSize: 13, color: colors.muted, fontWeight: '600' },
   dotTextDone: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  tasks: { marginTop: 14, marginBottom: -8 },
+  tasks: { marginTop: 14, marginBottom: -4 },
 });

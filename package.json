@@ -1,6 +1,6 @@
 {
   "name": "weekchamp",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "main": "index.ts",
   "dependencies": {
     "@expo/metro-runtime": "~58.0.17",
