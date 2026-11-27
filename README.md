@@ -8,6 +8,7 @@ Ultimate goal  ->  Project  ->  Task
 
 ## Features
 
+- **Week view.** The first tab shows one week at a time: every project active that week, its tasks done per day, and its tasks to mark. Arrows move to earlier weeks.
 - **One touch, long touch.** Touch a task to mark it done. Long touch to mark it missed. Touch a done or missed task to reopen it.
 - **Project page.** Press a project to open its page: tasks done, missed and open, completion, tasks done per week, and days left. Add tasks there.
 - **Project dates.** Every project has a start date and either an end date or no end date.
@@ -46,6 +47,7 @@ Set the version in `app.json` (`version`, `android.versionCode`) and `package.js
 | `App.tsx` | Shell, tabs, page navigation, edit dialogs |
 | `src/logic.ts` | Data shapes, dates, project statistics, goals, life wheel, capacity assessment (pure, unit-tested) |
 | `src/useAppData.ts` | Load and save to device storage |
+| `src/WeekScreen.tsx` | Week view: active projects, day circles, tasks |
 | `src/ProjectsScreen.tsx` | Project list |
 | `src/ProjectPage.tsx` | One project: statistics and tasks |
 | `src/ProjectEditor.tsx` | Add/edit a project |

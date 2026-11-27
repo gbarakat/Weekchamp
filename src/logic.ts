@@ -470,3 +470,58 @@ export function sanitize(raw: unknown): AppData {
 
   return { schemaVersion: 3, goals, projects, tasks, settings };
 }
+
+// ---------- week view ----------
+
+export const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+export function weekDays(weekStartKey: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => addDays(weekStartKey, i));
+}
+
+export function weekLabel(weekStartKey: string): string {
+  return `${shortDate(weekStartKey)} – ${shortDate(addDays(weekStartKey, 6))}`;
+}
+
+/** Projects that run on at least one day of the week. */
+export function projectsInWeek(projects: Project[], weekStartKey: string): Project[] {
+  const end = addDays(weekStartKey, 6);
+  return projects.filter(
+    (p) => p.startDate <= end && (p.endDate === null || p.endDate >= weekStartKey),
+  );
+}
+
+export type ProjectWeek = {
+  perDay: number[]; // tasks done on each of the 7 days
+  done: number;
+  missed: number;
+  tasks: Task[]; // tasks marked that week, plus open tasks when it is the current week
+};
+
+export function projectWeek(
+  data: AppData,
+  project: Project,
+  weekStartKey: string,
+  isCurrentWeek: boolean,
+): ProjectWeek {
+  const days = weekDays(weekStartKey);
+  const end = days[6];
+  const all = tasksOf(data, project.id);
+  const inWeek = (t: Task) => t.statusAt !== null && t.statusAt >= weekStartKey && t.statusAt <= end;
+  const marked = all.filter(inWeek);
+  return {
+    perDay: days.map((d) => all.filter((t) => t.status === 'done' && t.statusAt === d).length),
+    done: marked.filter((t) => t.status === 'done').length,
+    missed: marked.filter((t) => t.status === 'missed').length,
+    tasks: sortTasks(all.filter((t) => inWeek(t) || (isCurrentWeek && t.status === 'open'))),
+  };
+}
+
+/** Tasks done and missed in the week, across all projects. */
+export function weekSummary(data: AppData, weekStartKey: string): { done: number; missed: number } {
+  const end = addDays(weekStartKey, 6);
+  return {
+    done: countBetween(data.tasks, 'done', weekStartKey, end),
+    missed: countBetween(data.tasks, 'missed', weekStartKey, end),
+  };
+}

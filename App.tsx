@@ -1,6 +1,15 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { AppState, BackHandler, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  AppState,
+  BackHandler,
+  KeyboardAvoidingView,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { CapacityScreen } from './src/CapacityScreen';
@@ -23,10 +32,12 @@ import { ProjectsScreen } from './src/ProjectsScreen';
 import { colors } from './src/theme';
 import { Chip, Dialog, shared } from './src/ui';
 import { useAppData } from './src/useAppData';
+import { WeekScreen } from './src/WeekScreen';
 import { WheelScreen } from './src/WheelScreen';
 
-type Tab = 'projects' | 'goals' | 'wheel' | 'capacity';
+type Tab = 'week' | 'projects' | 'goals' | 'wheel' | 'capacity';
 const TABS: [Tab, string, string][] = [
+  ['week', '📅', 'Week'],
   ['projects', '🗂️', 'Projects'],
   ['goals', '🎯', 'Goals'],
   ['wheel', '🧭', 'Wheel'],
@@ -59,7 +70,7 @@ export default function App() {
   useForegroundTick();
   const todayKey = dateKey(new Date());
 
-  const [tab, setTab] = useState<Tab>('projects');
+  const [tab, setTab] = useState<Tab>('week');
   const [page, setPage] = useState<Page | null>(null);
 
   // Project editor: { project: null } creates a new one.
@@ -82,6 +93,7 @@ export default function App() {
   }, [page]);
 
   const openProject = (p: Project) => setPage({ kind: 'project', id: p.id, back: page });
+  // From a list, the project page's back button returns to the tab it was opened from.
   const openGoal = (g: Goal) => setPage({ kind: 'goal', id: g.id, back: null });
 
   const project = page?.kind === 'project' ? data.projects.find((p) => p.id === page.id) : undefined;
@@ -197,6 +209,18 @@ export default function App() {
         onLongTouch={longTouch}
       />
     );
+  } else if (tab === 'week') {
+    body = (
+      <WeekScreen
+        data={data}
+        todayKey={todayKey}
+        onOpen={openProject}
+        onAdd={() => setProjectEdit({ project: null })}
+        onTouch={touch}
+        onLongTouch={longTouch}
+        onEditTask={openTaskEdit}
+      />
+    );
   } else if (tab === 'projects') {
     body = (
       <ProjectsScreen
@@ -249,7 +273,10 @@ export default function App() {
           </Text>
         )}
 
-        <View style={styles.body}>{body}</View>
+        {/* Shrinks the page when the keyboard opens, so the focused input stays visible. */}
+        <KeyboardAvoidingView style={styles.body} behavior="padding">
+          {body}
+        </KeyboardAvoidingView>
 
         <View style={styles.tabs}>
           {TABS.map(([key, icon, label]) => {

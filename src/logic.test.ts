@@ -16,11 +16,14 @@ import {
   projectDates,
   projectPhase,
   projectStats,
+  projectsInWeek,
+  projectWeek,
   sanitize,
   sortTasks,
   startOfWeek,
   taskGoalId,
   touchTask,
+  weekSummary,
   type AppData,
   type Assessment,
   type Project,
@@ -407,4 +410,46 @@ test('sanitize drops malformed entries and dangling links, and never throws', ()
   ]);
   // A failure threshold above the success threshold is rejected.
   assert.deepEqual(out.settings, { ...DEFAULT_SETTINGS, successPct: 40, failPct: 30 });
+});
+
+// ---------- week view ----------
+
+test('the week view lists projects that run during the week', () => {
+  const projects = [
+    project('running'),
+    project('ends-monday', { endDate: '2026-11-23' }),
+    project('starts-saturday', { startDate: '2026-11-28' }),
+    project('ended', { endDate: '2026-11-21' }),
+    project('future', { startDate: '2026-11-29' }),
+  ];
+  assert.deepEqual(
+    projectsInWeek(projects, '2026-11-22').map((p) => p.id),
+    ['running', 'ends-monday', 'starts-saturday'],
+  );
+  // The week before, the ended project was still running.
+  assert.deepEqual(projectsInWeek(projects, '2026-11-15').map((p) => p.id), ['running', 'ends-monday', 'ended']);
+});
+
+test('a project week counts done tasks per day and lists that week\'s tasks', () => {
+  const p = project('p');
+  const sun = task('p', 'done', '2026-11-22');
+  const wedA = task('p', 'done', '2026-11-25');
+  const wedB = task('p', 'done', '2026-11-25');
+  const missed = task('p', 'missed', '2026-11-24');
+  const open = task('p');
+  const lastWeek = task('p', 'done', '2026-11-20');
+  const data = dataOf({ projects: [p, project('q')], tasks: [sun, wedA, wedB, missed, open, lastWeek, task('q', 'done', '2026-11-25')] });
+
+  const now = projectWeek(data, p, '2026-11-22', true);
+  assert.deepEqual(now.perDay, [1, 0, 0, 2, 0, 0, 0]);
+  assert.deepEqual([now.done, now.missed], [3, 1]);
+  assert.deepEqual(now.tasks.map((t) => t.id), [open.id, wedB.id, wedA.id, sun.id, missed.id]);
+
+  // A past week shows what was marked then, without today's open tasks.
+  const before = projectWeek(data, p, '2026-11-15', false);
+  assert.deepEqual(before.perDay, [0, 0, 0, 0, 0, 1, 0]);
+  assert.deepEqual(before.tasks.map((t) => t.id), [lastWeek.id]);
+
+  assert.deepEqual(weekSummary(data, '2026-11-22'), { done: 4, missed: 1 });
+  assert.deepEqual(weekSummary(data, '2026-11-08'), { done: 0, missed: 0 });
 });

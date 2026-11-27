@@ -1,7 +1,7 @@
 // Small shared controls.
 
 import type { ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { addDays, addMonths, parseKey, type Task } from './logic';
 import { colors } from './theme';
@@ -182,7 +182,7 @@ export function Dialog({
 }) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.dialogBackdrop}>
+      <KeyboardAvoidingView style={styles.dialogBackdrop} behavior="padding">
         <View style={styles.dialog}>
           <Text style={styles.dialogTitle}>{title}</Text>
           {message ? <Text style={styles.dialogMessage}>{message}</Text> : null}
@@ -211,7 +211,7 @@ export function Dialog({
             </Pressable>
           ))}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
